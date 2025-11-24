@@ -1,0 +1,29 @@
+{
+  "name": "elastic-local",
+  "version": "1.0.0",
+  "description": "Elasticsearch API server with Express",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "create-index": "node scripts/create-sample-index.js",
+    "bulk-index": "node scripts/bulk-index-example.js",
+    "reset-kibana-password": "node scripts/reset-kibana-password.js",
+    "check-kibana": "node scripts/check-kibana-connection.js"
+  },
+  "keywords": [
+    "elasticsearch",
+    "express",
+    "search"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@elastic/elasticsearch": "^8.15.0",
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5"
+  }
+}
+
