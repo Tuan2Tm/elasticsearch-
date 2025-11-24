@@ -95,23 +95,11 @@ export const syncOrderToES = async (order) => {
     const doc = {
       orderId: id,
       orderNameXPwId: order.orderNameXPwId,
-      sku: order.sku,
       shippingName: order.shippingAddress?.shippingName ?? '',
-      createdAt: order.createdAt,
-      dateReceived: order.dateReceived,
-      status: order.status,
-      sellerEmail: order.userData.email,
-      sellerCode: order.userData.code,
-      storeId: order.storeId,
 
       keywordSearch: [
         order.orderNameXPwId,
-        order.sku,
-        order.shippingAddress?.shippingName,
-        order.status,
-        order.userData.email,
-        order.userData.code,
-        order.storeId
+        order.shippingAddress?.shippingName
       ]
         .filter(Boolean)
         .join(' ')
@@ -138,7 +126,7 @@ export const syncAllBatch = async () => {
 
   console.log('🚀 Bắt đầu đồng bộ dữ liệu (Batch mode)...');
 
-  const totalOrders = await orderModel.countDocuments();
+  const totalOrders = await orderModel.countDocuments({});
   console.log(`📦 Tổng số orders cần đồng bộ: ${totalOrders}`);
 
   let syncedCount = 0;
@@ -148,7 +136,8 @@ export const syncAllBatch = async () => {
   await createIndexIfNotExists();
 
   while (skip < totalOrders) {
-    const orders = await orderModel.find().skip(skip).limit(BATCH_SIZE).lean();
+    const orders = await orderModel.find().skip(skip).limit(BATCH_SIZE).select('shippingAddress orderNameXPwId')
+      .lean();
     if (!orders.length) break;
 
     for (let i = 0; i < orders.length; i += concurrentSize) {
