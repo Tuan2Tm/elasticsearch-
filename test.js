@@ -58,22 +58,10 @@ export const createIndexIfNotExists = async () => {
         },
         mappings: {
           properties: {
-            id: { type: 'keyword' },
+            orderId: { type: 'keyword' },
             orderNameXPwId: { type: 'keyword' },
-            sku: { type: 'keyword' },
-            shippingName: { type: 'text' },
-
-            createdAt: { type: 'date' },
-            dateReceived: { type: 'date' },
-            status: { type: 'keyword' },
-            sellerEmail: { type: 'text' },
-            sellerCode: { type: 'keyword' },
-            storeId: { type: 'keyword' },
-
-            keywordSearch: {
-              type: 'text',
-              analyzer: 'keyword_analyzer'
-            }
+            shippingName: { type: 'text', analyzer: 'ngram_analyzer', search_analyzer: 'standard' },
+            keywordSearch: { type: 'text', analyzer: 'ngram_analyzer' }
           }
         }
       }
@@ -107,7 +95,7 @@ export const syncOrderToES = async (order) => {
 
     await client.index({
       index: 'orders',
-      id,
+      // id,
       document: doc
     });
 
