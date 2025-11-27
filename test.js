@@ -5,8 +5,8 @@
 /* eslint-disable no-await-in-loop */
 
 import { Client } from '@elastic/elasticsearch';
-import logger from '../../utils/logger.js';
-import orderModel from '../models/orderModel.js';
+// import logger from '../../utils/logger.js';
+// import orderModel from '../models/orderModel.js';
 
 const client = (() => {
   try {
@@ -60,6 +60,8 @@ export const createIndexIfNotExists = async () => {
           properties: {
             orderId: { type: 'keyword' },
             orderNameXPwId: { type: 'keyword' },
+            sellerId: { type: 'keyword' },
+            sellerEmail: { type: 'keyword' },
             shippingName: { type: 'text', analyzer: 'ngram_analyzer', search_analyzer: 'standard' },
             keywordSearch: { type: 'text', analyzer: 'ngram_analyzer' }
           }
@@ -84,6 +86,8 @@ export const syncOrderToES = async (order) => {
       orderId: id,
       orderNameXPwId: order.orderNameXPwId,
       shippingName: order.shippingAddress?.shippingName ?? '',
+      sellerId: order.sellerId?.toString() ?? '',
+      sellerEmail: order.userData?.email ?? '',
 
       keywordSearch: [
         order.orderNameXPwId,
@@ -185,3 +189,5 @@ export const syncAllBatch = async () => {
     totalTime
   };
 };
+
+syncAllBatch();
