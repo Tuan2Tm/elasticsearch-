@@ -11,11 +11,11 @@ import orderModel from '../models/orderModel.js';
 const client = (() => {
   try {
     const c = new Client({
-      node: process.env.ELASTIC_SEARCH_URL,
+      node: process.env.ELASTIC_SEARCH_NODE,
       // Nếu có auth:
       auth: {
-        username: process.env.ELASTICSEARCH_USERNAME,
-        password: process.env.ELASTICSEARCH_PASSWORD
+        username: process.env.ELASTIC_SEARCH_USERNAME,
+        password: process.env.ELASTIC_SEARCH_PASSWORD
       }
     });
 
@@ -29,12 +29,103 @@ const client = (() => {
   }
 })();
 
+export const updateIndexMapping = async () => {
+  try {
+    const exists = await client.indices.exists({ index: 'orders' });
+    if (!exists) {
+      console.log('⚠️ Index "orders" chưa tồn tại, không thể cập nhật mapping');
+      return false;
+    }
+
+    console.log('📝 Đang cập nhật mapping cho index "orders"...');
+
+    // 获取当前 settings 以确保保留现有配置
+    const currentSettings = await client.indices.getSettings({ index: 'orders' });
+    const existingAnalysis = currentSettings.orders?.settings?.index?.analysis || {};
+
+    // 关闭索引以更新 settings
+    await client.indices.close({ index: 'orders' });
+
+    // 合并现有的 analysis 配置，添加 normalizer 和确保 analyzer 存在
+    await client.indices.putSettings({
+      index: 'orders',
+      body: {
+        analysis: {
+          ...existingAnalysis,
+          analyzer: {
+            ...(existingAnalysis.analyzer || {}),
+            keyword_analyzer: {
+              type: 'custom',
+              tokenizer: 'standard',
+              filter: ['lowercase']
+            },
+            ngram_analyzer: {
+              type: 'custom',
+              tokenizer: 'ngram',
+              filter: ['lowercase']
+            }
+          },
+          normalizer: {
+            ...(existingAnalysis.normalizer || {}),
+            lowercase: {
+              type: 'custom',
+              filter: ['lowercase']
+            }
+          }
+        }
+      }
+    });
+
+    await client.indices.open({ index: 'orders' });
+
+    // Cập nhật mapping để thêm keyword 子字段
+    await client.indices.putMapping({
+      index: 'orders',
+      body: {
+        properties: {
+          orderNameXPwId: {
+            type: 'text',
+            analyzer: 'keyword_analyzer',
+            search_analyzer: 'standard',
+            fields: {
+              keyword: {
+                type: 'keyword',
+                normalizer: 'lowercase'
+              }
+            }
+          },
+          shippingName: {
+            type: 'text',
+            analyzer: 'keyword_analyzer',
+            search_analyzer: 'standard',
+            fields: {
+              keyword: {
+                type: 'keyword',
+                normalizer: 'lowercase'
+              }
+            }
+          }
+        }
+      }
+    });
+
+    console.log('✅ Đã cập nhật mapping thành công!');
+    return true;
+  }
+  catch (error) {
+    console.error('❌ Lỗi khi cập nhật mapping:', error.meta?.body?.error || error);
+    return false;
+  }
+};
+
 export const createIndexIfNotExists = async () => {
   try {
     const exists = await client.indices.exists({ index: 'orders' });
 
     if (exists) {
       console.log('✅ Index "orders" đã tồn tại');
+      // 如果索引已存在，尝试更新映射
+      await updateIndexMapping();
       return true;
     }
 
@@ -46,82 +137,55 @@ export const createIndexIfNotExists = async () => {
         settings: {
           number_of_shards: 1,
           number_of_replicas: 0,
-          'index.max_ngram_diff': 20,
-
           analysis: {
-            tokenizer: {
-              ngram_tokenizer: {
-                type: 'ngram',
-                min_gram: 2,
-                max_gram: 10,
-                token_chars: ['letter', 'digit']
-              }
-            },
             analyzer: {
-              ngram_analyzer: {
-                tokenizer: 'ngram_tokenizer',
-                filter: ['lowercase', 'asciifolding']
-              },
               keyword_analyzer: {
                 type: 'custom',
                 tokenizer: 'standard',
-                filter: ['lowercase', 'asciifolding']
+                filter: ['lowercase']
+              },
+              ngram_analyzer: {
+                type: 'custom',
+                tokenizer: 'ngram',
+                filter: ['lowercase']
               }
             },
             normalizer: {
-              lowercase_normalizer: {
+              lowercase: {
                 type: 'custom',
-                filter: ['lowercase', 'asciifolding']
+                filter: ['lowercase']
               }
             }
           }
         },
-
         mappings: {
           properties: {
             orderId: { type: 'keyword' },
-
             orderNameXPwId: {
               type: 'text',
-              analyzer: 'ngram_analyzer',
-              search_analyzer: 'standard',
-              fields: {
-                raw: { type: 'keyword' }
-              }
-            },
-
-            shippingName: {
-              type: 'text',
-              analyzer: 'ngram_analyzer',
-              search_analyzer: 'standard',
-              fields: {
-                raw: { type: 'keyword' }
-              }
-            },
-
-            sellerId: { type: 'keyword' },
-
-            sellerEmail: {
-              type: 'text',
               analyzer: 'keyword_analyzer',
-              fields: {
-                raw: { type: 'keyword' },
-                lowercase: { type: 'keyword', normalizer: 'lowercase_normalizer' }
-              }
-            },
-
-            keywordSearch: {
-              type: 'text',
-              analyzer: 'ngram_analyzer',
               search_analyzer: 'standard',
               fields: {
-                raw: { type: 'keyword' },
-                lowercase: {
+                keyword: {
                   type: 'keyword',
-                  normalizer: 'lowercase_normalizer'
+                  normalizer: 'lowercase'
                 }
               }
-            }
+            },
+            sellerId: { type: 'keyword' },
+            sellerEmail: { type: 'keyword' },
+            shippingName: {
+              type: 'text',
+              analyzer: 'keyword_analyzer',
+              search_analyzer: 'standard',
+              fields: {
+                keyword: {
+                  type: 'keyword',
+                  normalizer: 'lowercase'
+                }
+              }
+            },
+            keywordSearch: { type: 'text', analyzer: 'ngram_analyzer' }
           }
         }
       }
@@ -140,11 +204,16 @@ export const syncOrderToES = async (order) => {
   try {
     const id = order._id.toString();
 
+    const convertString = (text) => {
+      if (!text || typeof text !== 'string') return '';
+      return text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+    };
+
     const doc = {
       orderId: id,
-      orderNameXPwId: order.orderNameXPwId,
-      shippingName: order.shippingAddress?.shippingName ?? '',
-      sellerId: order.userId,
+      orderNameXPwId: convertString(order.orderNameXPwId ?? ''),
+      shippingName: convertString(order.shippingAddress?.shippingName ?? ''),
+      sellerId: order.userId ?? '',
       sellerEmail: order.userData?.email ?? '',
 
       keywordSearch: [
