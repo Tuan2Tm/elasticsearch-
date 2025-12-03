@@ -3,6 +3,86 @@ import client from '../config/elasticsearch.js';
 
 const router = express.Router();
 
+const INDEX = 'orders';
+const PAGE_SIZE = 5000;
+export const searchOrdersInES = async (keyword, filed = 'orderNameXPwId', filters = {}) => {
+  const ids = [];
+  let searchAfter = null;
+  let total = 0;
+  let hasMore = true;
+
+  const normalizedKeyword = keyword.toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim();
+
+  const searchQueries = [
+    {
+      wildcard: {
+        [`${filed}.keyword`]: {
+          value: `*${normalizedKeyword}*`,
+          case_insensitive: true
+        }
+      }
+    }
+  ];
+
+  if (filters.sellerId && sellerRoles.includes(filters.roleCode)) {
+    searchQueries.push({
+      term: {
+        sellerId: filters.sellerId
+      }
+    });
+  }
+
+  // if (filters.sellerEmail && sellerRoles.includes(filters.roleCode)) {
+  //   mustQueries.push({
+  //     term: {
+  //       sellerEmail: filters.sellerEmail
+  //     }
+  //   });
+  // }
+
+  try {
+    while (hasMore) {
+      const body = {
+        index: INDEX,
+        size: PAGE_SIZE,
+        // _source: false, // chỉ lấy id cho nhẹ
+        query: {
+          bool: {
+            must: searchQueries
+          }
+        }
+      };
+
+      if (searchAfter) {
+        body.search_after = searchAfter;
+      }
+      const result = await elasticsearchService.search(body);
+      const { hits } = result.hits;
+      if (hits.length === 0) {
+        hasMore = false;
+        break;
+      }
+      // Lấy _id
+      hits.map((item) => ids.push(item?._source?.orderId));
+      searchAfter = hits[hits.length - 1].sort;
+      total = result.hits.total.value;
+      if (ids.length >= total) {
+        hasMore = false;
+        break;
+      }
+    }
+  }
+  catch (error) {
+    logger.error(error);
+    return { ids: [], total: 0 };
+  }
+
+  return { ids, total };
+};
+
 // 1. 基础全文搜索
 router.post('/basic', async (req, res) => {
   try {
